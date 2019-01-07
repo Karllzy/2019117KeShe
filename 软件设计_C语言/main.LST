@@ -1,0 +1,233 @@
+C51 COMPILER V9.01   MAIN                                                                  01/07/2019 15:52:55 PAGE 1   
+
+
+C51 COMPILER V9.01, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          #include "reg52.h"
+   2          #include "absacc.h"
+   3          
+   4          typedef unsigned int u16;
+   5          typedef unsigned char u8;
+   6          
+   7          u8      receiveCounter=0, sendCounter=0;                                                        //用于接受和发送的寄存器
+   8          u8      receiveBuff[7] = {0x55, 0xff, 0xC5, 0x00, 0x00, 0xAA, 0xff};    //发送格式为:55, 地址, CH5, 数据�
+             -��, 数据低, 校验码(高四位无效)
+   9          u8      sendBuff[5] = {0x55, 0xff, 0xEE, 0xAA, 0xff};                           //失败报错格式为:55, 地址， EEH， AA, 校�
+             -�码
+  10          u8      motors1=0x00, motors2=0x00;
+  11          
+  12          void UsartInit();
+  13          u8 readSwitch();
+  14          u8 getCheckCode(u8 receive_or_send);
+  15          
+  16          void  main()
+  17          {
+  18   1              UsartInit();
+  19   1              //InitTimer0()  暂时没有必要使用
+  20   1              while(1)
+  21   1              {
+  22   2                      P1 = motors1;
+  23   2                      P2 = motors2 | 0xf0;                                                                    //使得高4位全部置为1，避免影响其他外设
+  24   2              }                                               
+  25   1      }
+  26          /*******************************************************************************
+  27          * 函数名         :UsartInit()
+  28          * 函数功能           :初始化串口中断
+  29          * 输入           : 无
+  30          * 输出                 : 无
+  31          *******************************************************************************/
+  32          void UsartInit()
+  33          {
+  34   1              EA = 1;                     //打开中断总开关
+  35   1              ET1 = 1;                        //允许定时器1中断
+  36   1              TMOD=0X21;                      //设置定时器1为工作方式2，（定时器0为工作方式1）
+  37   1              PCON=0X00;                      //波特率不加倍（SMOD置为0）
+  38   1      
+  39   1              TH1=0XFD;                       //设置波特率为9600bps
+  40   1              TL1=0XFD;                       
+  41   1              TR1=1;                          //开始定时
+  42   1      }
+  43          
+  44          
+  45          /*******************************************************************************
+  46          * 函数名         : Usart() interrupt 4
+  47          * 函数功能           : 串口通信中断函数
+  48          * 输入           : 无
+  49          * 输出                 : 无
+  50          *******************************************************************************/
+  51          void Usart() interrupt 4
+  52          {
+  53   1              if(RI)
+C51 COMPILER V9.01   MAIN                                                                  01/07/2019 15:52:55 PAGE 2   
+
+  54   1              {
+  55   2                      switch(receiveCounter)
+  56   2                      {
+  57   3                              case 0:                                                                                 //如果是第1位, 先进行协议确认,协议错误，直接放弃
+  58   3                                      if(SBUF==0x55)
+  59   3                                      {
+  60   4                                              receiveBuff[receiveCounter] = SBUF;
+  61   4                                              receiveCounter++ ;
+  62   4                                      }
+  63   3                                      else
+  64   3                                      {
+  65   4                                              receiveCounter = 0;
+  66   4                                      }
+  67   3                                      break;
+  68   3      
+  69   3                              case 1:                                                                                 //如果是第2位，进行地址确认，如果地址确认失败，直接放弃
+  70   3                                      if (SBUF == readSwitch())
+  71   3                                      {
+  72   4                                              receiveBuff[receiveCounter] = SBUF;
+  73   4                                              receiveCounter++ ;
+  74   4                                      }
+  75   3                                      else
+  76   3                                      {
+  77   4                                              receiveCounter = 0 ;
+  78   4                                      }
+  79   3                                      break;
+  80   3      
+  81   3                              case 2:                                                                                 //如果是第3位，看看指令对不对，如果指令错了，不仅放弃还要�
+             -��送错误报告
+  82   3                                      if (SBUF == 0xC5)
+  83   3                                      {
+  84   4                                              receiveBuff[receiveCounter] = SBUF;
+  85   4                                              receiveCounter++ ;      
+  86   4                                      }
+  87   3                                      else
+  88   3                                      {
+  89   4                                              SBUF = sendBuff[sendCounter] ;
+  90   4                                              receiveCounter = 0 ;//放弃此次接收数据
+  91   4                                              sendCounter++ ;
+  92   4                                      }
+  93   3                                      break;
+  94   3                              case 3:                                                                                 //如果是第4位直接接收
+  95   3                                      receiveBuff[receiveCounter] = SBUF;
+  96   3                                      receiveCounter++ ;
+  97   3                                      break;
+  98   3                              case 4:                                                                                 //如果是第5位直接接收
+  99   3                                      receiveBuff[receiveCounter] = SBUF;
+ 100   3                                      receiveCounter++ ;
+ 101   3                                      break;
+ 102   3                              case 5:                                                                                 //如果是第6位，进行协议确认，若协议错误，不仅放弃还要发送�
+             -��误报告
+ 103   3                                      if (SBUF == 0xAA)
+ 104   3                                      {
+ 105   4                                              receiveBuff[receiveCounter] = SBUF;
+ 106   4                                              receiveCounter++ ;
+ 107   4                                      }
+ 108   3                                      else
+ 109   3                                      {
+ 110   4                                              SBUF = sendBuff[sendCounter] ;
+ 111   4                                              receiveCounter = 0 ;//放弃此次接收数据
+ 112   4                                              sendCounter++ ;
+ 113   4                                      }
+C51 COMPILER V9.01   MAIN                                                                  01/07/2019 15:52:55 PAGE 3   
+
+ 114   3                                      break;
+ 115   3                              case 6:                                                                                 //如果是第7位, 进行校验码检查       
+ 116   3                                      if(SBUF == getCheckCode(1))                                     //进行接受检验码检查
+ 117   3                                      {
+ 118   4                                              motors1 = receiveBuff[4];                       //低八位放入motors1
+ 119   4                                              motors2 = receiveBuff[3];               //高八位放入motors2
+ 120   4                                      }
+ 121   3                      }
+ 122   2                      RI = 0;                                                                                         //清空RI等待下次被中断
+ 123   2              }
+ 124   1              else
+ 125   1              {
+ 126   2                      switch(sendCounter)
+ 127   2                      {
+ 128   3                              case 1:
+ 129   3                                      SBUF = readSwitch();                                            //若是第二位，发送地址
+ 130   3                                      sendBuff[sendCounter] = readSwitch();
+ 131   3                                      sendCounter++ ;
+ 132   3                                      break;
+ 133   3                              case 4:                                                                                 //若是第五位，发送校验码
+ 134   3                                      SBUF = getCheckCode(0);
+ 135   3                                      sendCounter++ ;
+ 136   3                                      break;
+ 137   3                              default:
+ 138   3                                      SBUF = sendBuff[sendCounter];
+ 139   3                                      sendCounter++ ;
+ 140   3                      }
+ 141   2                      TI = 0;
+ 142   2              }
+ 143   1      }
+ 144          
+ 145          /*******************************************************************************
+ 146          * 函数名         : InitTimer0
+ 147          * 函数功能           : 初始化定时器0
+ 148          * 输入           : 无
+ 149          * 输出                 : 无
+ 150          *******************************************************************************/
+ 151          void InitTimer0()
+ 152          {
+ 153   1              EA = 1;                     //打开中断总开关
+ 154   1              ET0 = 1;                        //允许定时器0的中断
+ 155   1              TMOD=0X21;                      //设置定时器0为工作方式1
+ 156   1      
+ 157   1              TH0=0XCD;                       //设置定时的时长为1ms
+ 158   1              TL0=0XD4;                       
+ 159   1              TR0=1;                          //开始定时  
+ 160   1      }
+ 161          
+ 162          
+ 163          /*******************************************************************************
+ 164          * 函数名         :readSwitch
+ 165          * 函数功能           : 读取拨码开关的设定地址
+ 166          * 输入           : 无
+ 167          * 输出                 : 认为设定的地址
+ 168          *******************************************************************************/
+ 169          u8 readSwitch()
+ 170          {       
+ 171   1              u8 address;
+ 172   1              address = XBYTE[0x7FFF] ;
+ 173   1              return address;
+ 174   1      }
+ 175          /*******************************************************************************
+C51 COMPILER V9.01   MAIN                                                                  01/07/2019 15:52:55 PAGE 4   
+
+ 176          * 函数名         : getCheckCode()
+ 177          * 函数功能           : 获取校验码
+ 178          * 输入           : 是接受校验码还是发送校验码，接收校验为1，发送校验为0
+ 179          * 输出                 : 校验码
+ 180          *******************************************************************************/
+ 181          u8 getCheckCode(u8 receive_or_send)
+ 182          {
+ 183   1              u8 result = 0x00, i;    
+ 184   1              if( receive_or_send == 1)
+ 185   1              {
+ 186   2                      for (i=0; i<6; i++)
+ 187   2                      {       
+ 188   3                              result += receiveBuff[i] ;
+ 189   3                      }
+ 190   2              }
+ 191   1              else
+ 192   1              {
+ 193   2                      for (i=0; i<4; i++)
+ 194   2                      {
+ 195   3                              result += sendBuff[i] ;
+ 196   3                      };
+ 197   2              }
+ 198   1              return result; 
+ 199   1      
+ 200   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    320    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     16    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

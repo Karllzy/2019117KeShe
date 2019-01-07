@@ -1,0 +1,4 @@
+"STARTUP.obj",
+"main.obj" 
+TO "课设程序" 
+RAMSIZE(256) 
